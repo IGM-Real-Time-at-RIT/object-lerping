@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Lerping Movement</title>
+    <meta charset="utf-8"/>
+    <style>
+      html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding:0;
+      }
+      
+      canvas {
+        margin: 10px;
+        border: 1px solid black;
+      }
+      
+      p {
+        margin-left: 12px;
+        font-size: 1.2em;
+        width: 50%; 
+      }
+    </style>
+    <script src="/socket.io/socket.io.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-core/5.8.34/browser.min.js"></script>
+	<script type="text/babel">  
+        "use strict";
+    
+        let canvas;
+        let ctx;
+        //our websocket connection
+        let socket; 
+        let hash;
+        let moveDown = false;
+        let moveUp = false;
+        let moveRight = false;
+        let moveLeft = false;
+
+        let squares = {};
+        
+        const update = (data) => {
+
+        };
+        
+        const removeUser = (hash) => {
+
+        };
+        
+        const setUser = (data) => {
+
+        };
+        
+        const updatePosition = () => {
+
+        };
+        
+        const redraw = (time) => {
+            updatePosition();
+        
+            ctx.clearRect(0, 0, 500, 500);
+        
+            const keys = Object.keys(squares);
+
+
+
+            requestAnimationFrame(redraw);
+        };
+        
+        const keyDownHandler = (e) => {
+            var keyPressed = e.which;
+
+            // W OR UP
+            if(keyPressed === 87 || keyPressed === 38) {
+              moveUp = true;
+            }
+            // A OR LEFT
+            else if(keyPressed === 65 || keyPressed === 37) {
+              moveLeft = true;
+            }
+            // S OR DOWN
+            else if(keyPressed === 83 || keyPressed === 40) {
+              moveDown = true;
+            }
+            // D OR RIGHT
+            else if(keyPressed === 68 || keyPressed === 39) {
+              moveRight = true;
+            }
+            
+            //if one of these keys is down, let's cancel the browsers
+            //default action so the page doesn't try to scroll on the user
+            if(moveUp || moveDown || moveLeft || moveRight) {
+              e.preventDefault();
+            }
+        };
+        
+        const keyUpHandler = (e) => {
+            var keyPressed = e.which;
+
+            // W OR UP
+            if(keyPressed === 87 || keyPressed === 38) {
+              moveUp = false;
+            }
+            // A OR LEFT
+            else if(keyPressed === 65 || keyPressed === 37) {
+              moveLeft = false;
+            }
+            // S OR DOWN
+            else if(keyPressed === 83 || keyPressed === 40) {
+              moveDown = false;
+            }
+            // D OR RIGHT
+            else if(keyPressed === 68 || keyPressed === 39) {
+              moveRight = false;
+            }       
+        };
+
+        const init = () => {
+            canvas = document.querySelector("#canvas");
+            ctx = canvas.getContext("2d");
+        
+            socket = io.connect();
+            
+            socket.on('connect', function () {
+              
+            });  
+            
+            socket.on('joined', setUser);
+            
+            socket.on('updatedMovement', update);
+            
+            socket.on('left', removeUser);
+            
+            document.body.addEventListener('keydown', keyDownHandler);
+            document.body.addEventListener('keyup', keyUpHandler);
+        };
+
+      window.onload = init;
+    </script>
+</head>
+<body>
+    <canvas id="canvas" height="500" width="500">Please use an HTML 5 browser</canvas>
+	<p><b>Heroku may not be able to keep up with the speed of this one. That might be a limitation of the free tier or maybe a limitation on how much throughput websockets can have on their servers.</b></p>
+    <p>This will lag severely when the window is not in focus due to the event loop being drastically slowed.</p>
+    <p>It may also jitter because of inconsistent timing of packets arriving. Some of that has been mitigated by checking the times on packets, but it won't account for any lag, so there might be jitter or jumps. This is avoided with a much more advanced technique called "play out delay", but depending on the implementation, that might be under very heavy patents.</p>
+</body>
+</html>
