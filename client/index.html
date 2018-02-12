@@ -40,19 +40,61 @@
         let squares = {};
         
         const update = (data) => {
-
+          if(!squares[data.hash]) {
+            squares[data.hash] = data;
+            return;
+          }
+          
+          //if we were using io.sockets.in or socket.emit
+          //to forcefully move this user back because of
+          //collision, error, invalid data, etc
+          /**
+          if(data.hash === hash) {
+            //force update user somehow
+            return;
+          } **/
+          
+          const square = squares[data.hash];
+          
+          if(square.lastUpdate >= data.lastUpdate) {
+            return;
+          } 
+          
+          square.lastUpdate = data.lastUpdate;
+          square.x = data.x;
+          square.y = data.y;
         };
         
         const removeUser = (hash) => {
-
+          if(squares[hash]) {
+            delete squares[hash];
+          }
         };
         
         const setUser = (data) => {
-
+          hash = data.hash;
+          squares[hash] = data;
+          requestAnimationFrame(redraw);
         };
         
         const updatePosition = () => {
+          const square = squares[hash];
 
+          if(moveUp && square.y > 0) {
+            square.y -= 2;
+          }
+          if(moveDown && square.y < 400) {
+            square.y += 2;
+          }
+          if(moveLeft && square.x > 0) {
+            square.x -= 2;
+          }
+          if(moveRight && square.x < 400) {
+            square.x += 2;
+          }
+          
+          //moved to sendWithLag
+          //socket.emit('movementUpdate', square);
         };
         
         const redraw = (time) => {
@@ -62,7 +104,19 @@
         
             const keys = Object.keys(squares);
 
-
+            for(let i = 0; i < keys.length; i++) {
+              
+              const square = squares[keys[i]];
+              
+              if(square.hash === hash) {
+                ctx.fillStyle = "blue";
+              }
+              else {
+                ctx.fillStyle = "black";
+              }
+              
+              ctx.fillRect(square.x, square.y, square.width, square.height);
+            }
 
             requestAnimationFrame(redraw);
         };
@@ -115,6 +169,10 @@
             }       
         };
 
+        const sendWithLag = () => {
+          socket.emit('movementUpdate', squares[hash]);
+        };
+
         const init = () => {
             canvas = document.querySelector("#canvas");
             ctx = canvas.getContext("2d");
@@ -122,7 +180,7 @@
             socket = io.connect();
             
             socket.on('connect', function () {
-              
+              setInterval(sendWithLag, 40);
             });  
             
             socket.on('joined', setUser);
