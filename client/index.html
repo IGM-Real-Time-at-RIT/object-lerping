@@ -30,167 +30,352 @@
         let canvas;
         let ctx;
         //our websocket connection
-        let socket; 
-        let hash;
-        let moveDown = false;
-        let moveUp = false;
-        let moveRight = false;
-        let moveLeft = false;
+        let socket; //this user's socket
+        let hash;  //this user's personal object id
+        let moveDown = false;  //down or s held
+        let moveUp = false;    //up or w held
+        let moveRight = false; //right or d held
+        let moveLeft = false;  //left or a held
 
+        //object to hold all of our squares
+        //These will be all of our user's objects
+        //indexed by that user's unique id (hash from the server)
         let squares = {};
         
+        //function to update a square 
+        //(single square sent from the server)
         const update = (data) => {
+          //do we have that user?
+          //check if square's has a variable named by
+          //the hash of the object sent
           if(!squares[data.hash]) {
+            //if not, add the entire object using
+            //the hash as an id in our squares object
             squares[data.hash] = data;
+            //return since there's nothing else to do now
             return;
           }
           
-          //if we were using io.sockets.in or socket.emit
-          //to forcefully move this user back because of
-          //collision, error, invalid data, etc
+          //If we were using io.sockets.in or socket.emit (instead of broadcast)
+          //we would want to handle if the server was updating our object.
+          //Because of round trip time (RTT), our object should be more
+          //up to date than the server, but we might allow the server 
+          //to completely override this player's info because the server
+          //detected a collision or something. 
           /**
           if(data.hash === hash) {
-            //force update user somehow
+            //handle force overrride of this user from server
             return;
           } **/
           
+          //grab our matching object based on the id of the object received
           const square = squares[data.hash];
           
+          //if the square to update has a later update time than
+          //the packet we just got (due to lag or something)
+          //we don't want to process it. It's old data.
           if(square.lastUpdate >= data.lastUpdate) {
             return;
-          } 
+          }
           
+          //overwrite our lastUpdate with the one from the object
           square.lastUpdate = data.lastUpdate;
-          square.x = data.x;
-          square.y = data.y;
+          /**
+            overwrite our previous and destination positions
+            with that from the updated object
+            
+            NOTICE! - we do not use all of the updated object
+            because the object we have will have a different
+            local x/y that we need to hang on to for animating
+            from the current position. The x/y we got from the
+            server is accurate, but if we just hop ours to that
+            position it's going to look very jittery.
+            Instead we will use a lerping function to update
+            our local x/y based on our new previous/destination posiions
+          **/
+          square.prevX = data.prevX;
+          square.prevY = data.prevY;
+          square.destX = data.destX;
+          square.destY = data.destY;
+          /**
+            reset our local object's alpha
+            remember that the alpha is how far is has animated
+            between the previous position and destination position
+            An alpha of 0 is at the previous position (A)
+            An alpha of 1 is at the destination position (B)
+            An alpha of 0.5 is halfway between A and B.
+            Currently we are resetting ours, but not quite to 0
+            because we want to make sure it at least moves.
+            If we go to 0, it might be jumping back from a 
+            previous lerp and create a frame of jitter.
+          **/
+          square.alpha = 0.05;
         };
         
+        //remove a user object by the object's id
+        //id is the hash from the server of an object
         const removeUser = (hash) => {
+          //if we have that object
           if(squares[hash]) {
+            //delete it from our squares object
             delete squares[hash];
           }
         };
         
+        //set this user's object from the server
+        //data will be this user's object
         const setUser = (data) => {
+          //set this user's hash (this user's id)
+          //since they will need it to identify
+          //themselves
           hash = data.hash;
+          //add this user's object to our square's object 
+          //by this user's id.
+          //alternatively we could store this user's object
+          //separately and draw it. There may be use cases 
+          //to do that, but for now all of our objects are
+          //drawn and used identically.
           squares[hash] = data;
+          
+          //redraw with our latest info
           requestAnimationFrame(redraw);
         };
         
+        /**
+          linear interpolation (lerp) function
+          This will calculate how far a number should be
+          based on position 1 (v0), position 2 (v1) and
+          how far between in % it is (alpha).
+          
+          An alpha of 0 is at the previous position (A)
+          An alpha of 1 is at the destination position (B)
+          An alpha of 0.5 is halfway between A and B.
+        **/
+        const lerp = (v0, v1, alpha) => {
+          //There are many different lerping algorithms
+          //not just this one. They all have slightly
+          //different results, but are mostly similar.
+          return (1 - alpha) * v0 + alpha * v1;
+        };
+        
+        //update this user's position
         const updatePosition = () => {
+          //grab our user's square based on our user's id (hash)
           const square = squares[hash];
 
-          if(moveUp && square.y > 0) {
-            square.y -= 2;
-          }
-          if(moveDown && square.y < 400) {
-            square.y += 2;
-          }
-          if(moveLeft && square.x > 0) {
-            square.x -= 2;
-          }
-          if(moveRight && square.x < 400) {
-            square.x += 2;
-          }
+          //set our user's previous positions to their last positions
+          square.prevX = square.x;
+          square.prevY = square.y;
+
           
-          //moved to sendWithLag
+          /**These use ifs (not else if) because any number of 
+             keys could be down **/
+          
+          //if the user is going up but not off screen
+          //move their destination up (so we can animate)
+          //from our current Y
+          if(moveUp && square.destY > 0) {
+            square.destY -= 2;
+          }
+          //if the user is going down but not off screen
+          //move their destination down (so we can animate)
+          //from our current y
+          if(moveDown && square.destY < 400) {
+            square.destY += 2;
+          }
+          //if the user is going left but not off screen
+          //move their destination left (so we can animate)
+          //from our current x
+          if(moveLeft && square.destX > 0) {
+            square.destX -= 2;
+          }
+          //if the user is moving right but not off screen
+          //move their destination right (so we can animate)
+          //from our current x
+          if(moveRight && square.destX < 400) {
+            square.destX += 2;
+          }
+
+          //reset our alpha since we are moving
+          //want to reset the animation to keep playing
+          square.alpha = 0.05;
+
+          /**
+            normally we could emit here for 60fps 
+            since this is invoked by redraw (requestAnimationFrame).
+            
+            NOTICE! - We have moved this emit to sendWithLag to 
+                      simulate lag based on a timer. 
+          **/
           //socket.emit('movementUpdate', square);
         };
         
+        //redraw our player objects (requestAnimationFrame)
         const redraw = (time) => {
-            updatePosition();
-        
-            ctx.clearRect(0, 0, 500, 500);
-        
-            const keys = Object.keys(squares);
+          //update our current user's position
+          updatePosition();
 
-            for(let i = 0; i < keys.length; i++) {
-              
-              const square = squares[keys[i]];
-              
-              if(square.hash === hash) {
-                ctx.fillStyle = "blue";
-              }
-              else {
-                ctx.fillStyle = "black";
-              }
-              
-              ctx.fillRect(square.x, square.y, square.width, square.height);
+          //clear screen
+          ctx.clearRect(0, 0, 500, 500);
+
+          //grab all the variable names from our squares
+          //these will actually be the user id's (hashes)
+          //since that's how we index
+          const keys = Object.keys(squares);
+
+          //for each key in squares
+          for(let i = 0; i < keys.length; i++) {
+            //grab the square by user id (from our keys)
+            const square = squares[keys[i]];
+
+            //if alpha less than 1, increase it by 0.05
+            //This will keep the animation running smoothly
+            //You can modify the speed of this if you want.
+            //It will increase or slow the animation time.
+            if(square.alpha < 1) square.alpha += 0.05;
+
+            //if this square is our user's square 
+            //by checking our user's id (hash)
+            //If so, we'll draw ourselves in blue 
+            //to stand out
+            if(square.hash === hash) {
+              ctx.fillStyle = "blue";
+            }
+            //otherwise we'll draw other squares in black
+            else {
+              ctx.fillStyle = "black";
             }
 
-            requestAnimationFrame(redraw);
+            //calculate this square's x and y based on lerping
+            //between where their previous and destination positions
+            //are along with the alpha value (of how far they are to it).
+            square.x = lerp(square.prevX, square.destX, square.alpha);
+            square.y = lerp(square.prevY, square.destY, square.alpha);
+
+            //draw this square (based on the lerped positions)
+            ctx.fillRect(square.x, square.y, square.width, square.height);
+          }
+
+          //redraw (hopefully at 60fps)
+          requestAnimationFrame(redraw);
         };
         
-        const keyDownHandler = (e) => {
-            var keyPressed = e.which;
+        //handle key down
+        const keyDownHandler = (e) => {  
+          //grab keycode from keyboard event
+          var keyPressed = e.which;
 
-            // W OR UP
-            if(keyPressed === 87 || keyPressed === 38) {
-              moveUp = true;
-            }
-            // A OR LEFT
-            else if(keyPressed === 65 || keyPressed === 37) {
-              moveLeft = true;
-            }
-            // S OR DOWN
-            else if(keyPressed === 83 || keyPressed === 40) {
-              moveDown = true;
-            }
-            // D OR RIGHT
-            else if(keyPressed === 68 || keyPressed === 39) {
-              moveRight = true;
-            }
-            
-            //if one of these keys is down, let's cancel the browsers
-            //default action so the page doesn't try to scroll on the user
-            if(moveUp || moveDown || moveLeft || moveRight) {
-              e.preventDefault();
-            }
+          /** 
+            We will set booleans, not draw directly. 
+            That way multiple keys can be down and held.
+            This will allow for angled movement 
+            not just up/down/right/left
+          **/
+
+          // W OR UP
+          if(keyPressed === 87 || keyPressed === 38) {
+            moveUp = true;
+          }
+          // A OR LEFT
+          else if(keyPressed === 65 || keyPressed === 37) {
+            moveLeft = true;
+          }
+          // S OR DOWN
+          else if(keyPressed === 83 || keyPressed === 40) {
+            moveDown = true;
+          }
+          // D OR RIGHT
+          else if(keyPressed === 68 || keyPressed === 39) {
+            moveRight = true;
+          }
+
+          //if one of these keys is down, let's cancel the browsers
+          //default action so the page doesn't try to scroll on the user
+          if(moveUp || moveDown || moveLeft || moveRight) {
+            e.preventDefault();
+          }
         };
         
+        //key up event
         const keyUpHandler = (e) => {
-            var keyPressed = e.which;
+          //grab keycode from keyboard event
+          var keyPressed = e.which;
 
-            // W OR UP
-            if(keyPressed === 87 || keyPressed === 38) {
-              moveUp = false;
-            }
-            // A OR LEFT
-            else if(keyPressed === 65 || keyPressed === 37) {
-              moveLeft = false;
-            }
-            // S OR DOWN
-            else if(keyPressed === 83 || keyPressed === 40) {
-              moveDown = false;
-            }
-            // D OR RIGHT
-            else if(keyPressed === 68 || keyPressed === 39) {
-              moveRight = false;
-            }       
+          /** 
+            We will set booleans, not draw directly. 
+            That way multiple keys can be released.
+            This will allow for angled movement 
+            not just up/down/right/left
+          **/
+
+          // W OR UP
+          if(keyPressed === 87 || keyPressed === 38) {
+            moveUp = false;
+          }
+          // A OR LEFT
+          else if(keyPressed === 65 || keyPressed === 37) {
+            moveLeft = false;
+          }
+          // S OR DOWN
+          else if(keyPressed === 83 || keyPressed === 40) {
+            moveDown = false;
+          }
+          // D OR RIGHT
+          else if(keyPressed === 68 || keyPressed === 39) {
+            moveRight = false;
+          }       
         };
-
-        const sendWithLag = () => {
+		
+        //function to send this user's updates
+        //NOTICE - this is pulled out into a function
+        //         we can call to simulate lag.
+		const sendWithLag = () => {
+          //send this user's updated position
           socket.emit('movementUpdate', squares[hash]);
-        };
+		};
 
         const init = () => {
-            canvas = document.querySelector("#canvas");
-            ctx = canvas.getContext("2d");
-        
-            socket = io.connect();
-            
-            socket.on('connect', function () {
-              setInterval(sendWithLag, 40);
-            });  
-            
-            socket.on('joined', setUser);
-            
-            socket.on('updatedMovement', update);
-            
-            socket.on('left', removeUser);
-            
-            document.body.addEventListener('keydown', keyDownHandler);
-            document.body.addEventListener('keyup', keyUpHandler);
+          canvas = document.querySelector("#canvas");
+          ctx = canvas.getContext("2d");
+
+          //connect to the server
+          //only running once so we don't open multiple
+          //connections.
+          socket = io.connect();
+
+          //once we successfully connect, start sending
+          //this user's position. If do this before
+          //connect, then we'll get undefined values
+          //for the emit since we don't have a square yet
+          //nor do we have an active connection.
+          socket.on('connect', function () {
+            /**
+              THIS IS JUST TO SIMULATE LAG. 
+              Normally we'd send in requestAnimationFrame,
+              by event or with a very fast timer.
+
+              This is just to simulate lag of 20ms.
+              The higher the delay, the more data loss
+              and the less accurate the interpolation.
+            **/
+            setInterval(sendWithLag, 20);
+          });  
+
+          //when the socket receives a 'joined'
+          //event from the server, call setUser
+          socket.on('joined', setUser);
+
+          //when the socket receives an 'updatedMovement'
+          //event from the server, call update
+          socket.on('updatedMovement', update);
+
+          //when the socket receives a 'left'
+          //event from the server, call removeUser
+          socket.on('left', removeUser);
+
+          //key listeners
+          document.body.addEventListener('keydown', keyDownHandler);
+          document.body.addEventListener('keyup', keyUpHandler);
         };
 
       window.onload = init;
@@ -198,7 +383,7 @@
 </head>
 <body>
     <canvas id="canvas" height="500" width="500">Please use an HTML 5 browser</canvas>
-	<p><b>Heroku may not be able to keep up with the speed of this one. That might be a limitation of the free tier or maybe a limitation on how much throughput websockets can have on their servers.</b></p>
+    <p><b>Heroku may not be able to keep up with the speed of this one. That might be a limitation of the free tier or maybe a limitation on how much throughput websockets can have on their servers.</b></p>
     <p>This will lag severely when the window is not in focus due to the event loop being drastically slowed.</p>
     <p>It may also jitter because of inconsistent timing of packets arriving. Some of that has been mitigated by checking the times on packets, but it won't account for any lag, so there might be jitter or jumps. This is avoided with a much more advanced technique called "play out delay", but depending on the implementation, that might be under very heavy patents.</p>
 </body>
